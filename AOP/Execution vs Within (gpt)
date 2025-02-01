@@ -1,0 +1,101 @@
+Если твой `@Pointcut` теперь такой:  
+
+```java
+@Pointcut("execution(* ru.s100p.storage.controller..*.*(..))")
+public void controllerLog() {
+}
+```
+то он **перехватывает все методы (любого уровня доступа) во всех классах пакета** `ru.s100p.storage.controller` **и его подпакетов**.
+
+---
+
+## 🎯 **Как теперь указывать `@Pointcut` в `@Before`, `@AfterThrowing`, `@AfterReturning`, `@Around`?**
+
+Абсолютно так же, как и раньше — **используем `controllerLog()` со скобками**:
+
+### **📌 Примеры использования в `@Aspect`**
+```java
+@Aspect
+@Component
+@Slf4j
+public class LoggingAspect {
+
+    // 🔹 Определение Pointcut: отслеживает все методы контроллеров
+    @Pointcut("execution(* ru.s100p.storage.controller..*.*(..))")
+    public void controllerLog() { }
+
+    // 🔹 Перед выполнением метода контроллера
+    @Before("controllerLog()")
+    public void beforeControllerMethod(JoinPoint joinPoint) {
+        log.info("Вызов метода: {}.{} с аргументами {}",
+                joinPoint.getTarget().getClass().getSimpleName(),
+                joinPoint.getSignature().getName(),
+                Arrays.toString(joinPoint.getArgs()));
+    }
+
+    // 🔹 После успешного выполнения метода контроллера
+    @AfterReturning(pointcut = "controllerLog()", returning = "result")
+    public void afterReturningControllerMethod(JoinPoint joinPoint, Object result) {
+        log.info("Метод {}.{} завершился успешно, результат: {}",
+                joinPoint.getTarget().getClass().getSimpleName(),
+                joinPoint.getSignature().getName(),
+                result);
+    }
+
+    // 🔹 Логирование исключений в методах контроллера
+    @AfterThrowing(pointcut = "controllerLog()", throwing = "ex")
+    public void afterThrowingControllerMethod(JoinPoint joinPoint, Exception ex) {
+        log.error("Ошибка в методе {}.{}: {}",
+                joinPoint.getTarget().getClass().getSimpleName(),
+                joinPoint.getSignature().getName(),
+                ex.getMessage());
+    }
+
+    // 🔹 Вокруг вызова метода контроллера (до и после)
+    @Around("controllerLog()")
+    public Object aroundControllerMethod(ProceedingJoinPoint joinPoint) throws Throwable {
+        log.info("Начало выполнения метода: {}.{} с аргументами {}",
+                joinPoint.getTarget().getClass().getSimpleName(),
+                joinPoint.getSignature().getName(),
+                Arrays.toString(joinPoint.getArgs()));
+
+        Object result;
+        try {
+            result = joinPoint.proceed(); // Выполняем реальный метод
+            log.info("Метод {}.{} выполнен успешно, результат: {}",
+                    joinPoint.getTarget().getClass().getSimpleName(),
+                    joinPoint.getSignature().getName(),
+                    result);
+        } catch (Exception ex) {
+            log.error("Ошибка в методе {}.{}: {}",
+                    joinPoint.getTarget().getClass().getSimpleName(),
+                    joinPoint.getSignature().getName(),
+                    ex.getMessage());
+            throw ex; // Прокидываем исключение дальше
+        }
+
+        return result;
+    }
+}
+```
+
+---
+
+## 🔥 **В чем разница между `execution` и `within`?**
+|  **`execution`**  |  **`within`**  |
+|-------------------|---------------|
+| **Перехватывает только методы**  | **Перехватывает ВСЕ (методы, внутренние вызовы, анонимные классы)** |
+| **Можно указывать сигнатуру методов** (`public/private`, `returnType`, `args`) | **Применяется только к классам в указанном пакете** |
+| **Работает на уровне исполнения (`execution`)** | **Работает на уровне классов (`within`)** |
+| **Можно более гибко настраивать (`execution(* package..class.method(..))`)** | **Чаще используется, если просто нужно покрыть весь пакет** |
+
+---
+
+## ✅ **Вывод**
+- **Используй `controllerLog()` со скобками в аннотациях `@Before`, `@AfterThrowing`, `@AfterReturning`, `@Around`.**
+- **Разница между `execution` и `within`**:
+  - `execution(..)` точнее и позволяет **указать сигнатуры методов**.
+  - `within(..)` охватывает **все классы** в пакете, но **менее гибкий**.
+- **Выбор `execution` — правильное решение**, если тебе важно контролировать **методы (аргументы, уровень доступа, возврат значения)**.  
+
+Теперь логирование должно работать на всех методах контроллеров! 🚀
