@@ -1,0 +1,118 @@
+❓ **1. Пример DTO-проекции с конструкторной экспрессией**
+
+Чтобы JPA возвращала только нужные поля, можно использовать конструкторную экспрессию в JPQL-запросе. Например, создадим класс DTO:
+
+```java
+package com.example.dto;
+
+import java.util.List;
+
+public class AuthorDTO {
+    private String firstName;
+    private String lastName;
+    private List<BookDTO> books; // Если нужна проекция книг
+
+    // Конструктор для базовой проекции
+    public AuthorDTO(String firstName, String lastName) {
+        this.firstName = firstName;
+        this.lastName = lastName;
+    }
+
+    // Конструктор для проекции с книгами (при наличии подходящего BookDTO)
+    public AuthorDTO(String firstName, String lastName, List<BookDTO> books) {
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.books = books;
+    }
+
+    // Геттеры и, возможно, сеттеры (или используйте Lombok @Data)
+    public String getFirstName() { return firstName; }
+    public String getLastName() { return lastName; }
+    public List<BookDTO> getBooks() { return books; }
+}
+```
+
+И, например, класс для книг:
+
+```java
+package com.example.dto;
+
+import java.time.LocalDate;
+
+public class BookDTO {
+    private String bookName;
+    private LocalDate published;
+    private Integer pages;
+    private Integer rating;
+
+    public BookDTO(String bookName, LocalDate published, Integer pages, Integer rating) {
+        this.bookName = bookName;
+        this.published = published;
+        this.pages = pages;
+        this.rating = rating;
+    }
+
+    // Геттеры
+    public String getBookName() { return bookName; }
+    public LocalDate getPublished() { return published; }
+    public Integer getPages() { return pages; }
+    public Integer getRating() { return rating; }
+}
+```
+
+Далее, в репозитории можно написать запрос с конструкторной экспрессией:
+
+```java
+public interface AuthorRepo extends JpaRepository<AuthorEntity, Integer> {
+
+    @Query("SELECT new com.example.dto.AuthorDTO(a.firstName, a.lastName) " +
+           "FROM AuthorEntity a WHERE a.firstName = :firstName")
+    List<AuthorDTO> findByFirstName(@Param("firstName") String firstName);
+}
+```
+
+Если нужно включить книги, можно расширить запрос (при условии, что у BookEntity есть соответствующий конструктор или другой механизм):
+
+```java
+@Query("SELECT new com.example.dto.AuthorDTO(a.firstName, a.lastName, " +
+       " (SELECT bList FROM BookEntity bList WHERE bList.author = a)) " +
+       "FROM AuthorEntity a WHERE a.firstName = :firstName")
+List<AuthorDTO> findByFirstNameWithBooks(@Param("firstName") String firstName);
+```
+
+> **Важно:** Конструкторная экспрессия позволяет JPA выбрать только те столбцы, которые нужны для формирования DTO, что экономит ресурсы и предотвращает загрузку полной сущности.
+
+---
+
+**Вывод:**  
+- Передавать проекции напрямую в контроллер не стоит – лучше использовать отдельные DTO для представления данных в API.  
+- Используя конструкторную экспрессию, можно создать запрос, который возвращает объекты DTO, содержащие только нужные поля, вместо полной загрузки AuthorEntity.
+
+
+❓ **2. Можно ли заменить @Query с конструкторной экспрессией на @EntityGraph?**
+
+Короткий ответ: **нет**, потому что они решают разные задачи.
+
+---
+
+### **Почему @EntityGraph не заменяет @Query с конструкторной экспрессией:**
+
+1. **Назначение @EntityGraph:**
+   - @EntityGraph используется для управления стратегией загрузки ассоциаций сущности (например, для eager fetch связанных коллекций), позволяя избежать проблем с ленивой загрузкой и N+1 запросами.
+   - Он работает на уровне сущности и возвращает полностью сформированные объекты (с заданными ассоциациями), а не DTO.
+
+2. **Назначение @Query с конструкторной экспрессией:**
+   - @Query с конструкторной экспрессией позволяет сформировать запрос, который выбирает только нужные поля и сразу создает объекты DTO, вызывая конструктор DTO.
+   - Такой запрос экономит ресурсы, поскольку загружается только необходимая информация, а не полная сущность со всеми ассоциациями.
+
+3. **Разница в использовании:**
+   - Если тебе нужно вернуть объекты DTO, содержащие только определенные поля, то требуется именно @Query с конструкторной экспрессией.
+   - @EntityGraph не предоставляет возможности выбора только определенных столбцов и создания DTO через вызов конструктора.
+
+---
+
+### **Вывод:**
+Если цель — получить оптимизированный результат в виде DTO, в котором загружаются только нужные поля, то **нельзя заменить @Query с конструкторной экспрессией на @EntityGraph**.  
+@EntityGraph полезен для оптимизации загрузки ассоциаций у сущностей, но не для формирования DTO на уровне репозитория.
+
+Таким образом, для DTO-проекции с конструкторной экспрессией @Query остается необходимым инструментом.
