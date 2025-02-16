@@ -79,6 +79,43 @@ public interface AuthorRepo extends JpaRepository<AuthorEntity, Integer> {
        "FROM AuthorEntity a WHERE a.firstName = :firstName")
 List<AuthorDTO> findByFirstNameWithBooks(@Param("firstName") String firstName);
 ```
+Однако такой запрос **не сработает**, потому что подзапрос `(SELECT b FROM BookEntity b WHERE b.author.id = a.id)` пытается вернуть коллекцию, а JPQL не поддерживает конструкцию, которая сразу формирует список объектов внутри конструктора.
+
+---
+
+### **Возможные решения**
+
+1. **Два запроса + объединение в сервисном слое:**
+
+   - **Запрос 1:** Получить автора с основными полями (firstName, lastName) через конструкторную экспрессию:
+     ```java
+     @Query("SELECT new ru.s100p.storage.model.AuthorModel(a.firstName, a.lastName) " +
+            "FROM AuthorEntity a WHERE a.firstName = :firstName")
+     Optional<AuthorModel> findAuthorBasicByFirstName(@Param("firstName") String firstName);
+     ```
+     
+   - **Запрос 2:** Получить книги для данного автора (например, по его ID):
+     ```java
+     @Query("SELECT new ru.s100p.storage.model.BookModel(b.bookName, b.published, b.pages, b.rating) " +
+            "FROM BookEntity b WHERE b.author.id = :authorId")
+     List<BookModel> findBooksByAuthorId(@Param("authorId") Integer authorId);
+     ```
+     
+   - **Объединение:** В сервисном слое, после получения автора и списка его книг, установить книги в объект AuthorModel:
+     ```java
+     public Optional<AuthorModel> findByFirstName(String firstName) {
+         Optional<AuthorModel> optAuthor = authorRepo.findAuthorBasicByFirstName(firstName);
+         if(optAuthor.isPresent()){
+             AuthorModel author = optAuthor.get();
+             List<BookModel> books = bookRepo.findBooksByAuthorId(author.getId());
+             author.setBooks(books);
+         }
+         return optAuthor;
+     }
+     ``` 
+   Такой подход позволяет избежать проблем с вложенными коллекциями в одном JPQL-запросе.
+
+---
 
 > **Важно:** Конструкторная экспрессия позволяет JPA выбрать только те столбцы, которые нужны для формирования DTO, что экономит ресурсы и предотвращает загрузку полной сущности.
 
